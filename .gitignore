@@ -1,0 +1,12 @@
+# API Keys
+.env
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+venv/
+env/
+
+# Outputs
+outputs/
