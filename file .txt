@@ -1,0 +1,570 @@
+================================================================================
+  AI ENGINEER ASSESSMENT — COMPLETE PROJECT BLUEPRINT
+  Email Generation Assistant + Evaluation System
+================================================================================
+
+OVERVIEW
+--------
+This document is a complete, cursor-ready blueprint for acing the AI Engineer
+candidate assessment. It covers architecture, tech stack, file structure, all
+functions, prompt engineering strategy, evaluation metrics, and model comparison.
+
+Feed this entire file to Cursor / Aider / Continue / any AI coding assistant.
+
+================================================================================
+SECTION 1: TECH STACK
+================================================================================
+
+Language         : Python 3.11+
+LLM Provider     : Anthropic (claude-sonnet-4-20250514 as Model A)
+                   OpenAI (gpt-4o as Model B) — for comparison section
+LLM SDK          : anthropic>=0.28.0, openai>=1.30.0
+Env Management   : python-dotenv
+Evaluation       : Custom Python functions (no heavy eval framework needed)
+                   sentence-transformers (for semantic similarity metric)
+                   textstat (for readability/fluency metric)
+                   language-tool-python (optional grammar check)
+Output           : pandas, json, csv
+Report           : Jupyter Notebook (optional) or plain Python script
+Version Control  : Git + GitHub
+Dependencies Mgr : pip + requirements.txt
+
+Install command:
+  pip install anthropic openai python-dotenv sentence-transformers textstat pandas
+
+================================================================================
+SECTION 2: PROJECT FILE STRUCTURE
+================================================================================
+
+email-gen-assistant/
+│
+├── README.md                    # Setup + execution instructions
+├── requirements.txt             # All dependencies
+├── .env                         # API keys (never commit this)
+├── .gitignore                   # Ignore .env, __pycache__, outputs/
+│
+├── src/
+│   ├── __init__.py
+│   ├── generator.py             # Core email generation logic + prompt template
+│   ├── evaluator.py             # All 3 custom metric implementations
+│   ├── scenarios.py             # 10 test scenarios + human reference emails
+│   └── utils.py                 # Shared helpers (API call wrapper, retry logic)
+│
+├── run_evaluation.py            # Main script: runs all scenarios, outputs CSV/JSON
+├── compare_models.py            # Runs both models, generates comparison report
+│
+└── outputs/
+    ├── model_a_results.json
+    ├── model_b_results.json
+    ├── evaluation_report.csv
+    └── comparative_analysis.md
+
+================================================================================
+SECTION 3: ADVANCED PROMPTING TECHNIQUE — ROLE-PLAYING + FEW-SHOT
+================================================================================
+
+Strategy: Combine TWO techniques for maximum quality:
+  1. Role-Playing — assign Claude the persona of a "Senior Business Communication Expert"
+  2. Few-Shot Examples — provide 1-2 worked examples in the prompt itself
+  3. Chain-of-Thought — instruct the model to reason before writing
+
+Why this works: Role-playing sets quality baseline, few-shot anchors format+tone,
+and CoT ensures facts are not missed.
+
+--- PROMPT TEMPLATE (paste in generator.py) ---
+
+SYSTEM_PROMPT = """
+You are a Senior Business Communication Expert with 15 years of experience writing 
+professional emails across industries including finance, tech, consulting, and HR.
+You are known for:
+- Perfect tone calibration (formal to casual, urgent to empathetic)
+- Seamlessly weaving in key facts without sounding like a list
+- Writing emails that are concise yet complete — never padded, never missing anything
+- Strong, purposeful subject lines and clear calls to action
+
+Your task: Generate a professional email given an intent, a set of key facts, and a 
+desired tone.
+
+ALWAYS follow this reasoning process before writing:
+1. THINK: Identify the core goal of this email. What action or response does it seek?
+2. PLAN: Decide the optimal structure (greeting → context → facts → ask → close).
+3. WRITE: Draft the email, ensuring every key fact is included naturally.
+4. CHECK: Confirm the tone matches exactly, all facts are present, and the email 
+   is polished.
+
+Return ONLY the final email. No preamble, no explanation, no markdown fences.
+The output must be a ready-to-send email with Subject line, body, and sign-off.
+"""
+
+FEW_SHOT_EXAMPLE = """
+--- EXAMPLE ---
+INTENT: Follow up after a product demo to a potential client
+KEY FACTS:
+- Demo happened on June 5th
+- Client showed interest in the analytics dashboard feature
+- Pricing starts at $299/month with a 14-day free trial available
+- Next step: schedule a 30-minute Q&A call
+TONE: Professional but warm
+
+OUTPUT:
+Subject: Following Up on Yesterday's Demo — Next Steps
+
+Hi [Client Name],
+
+Thank you for taking the time to join us for the demo on June 5th. It was great 
+walking you through the platform, and I noticed your interest in the analytics 
+dashboard — it really is one of our most powerful features.
+
+I wanted to follow up and share that our plans start at $299/month, and we do offer 
+a 14-day free trial so you can explore the full feature set at no commitment.
+
+I'd love to set up a quick 30-minute Q&A call at your convenience to answer any 
+remaining questions. Would sometime next week work for you?
+
+Looking forward to hearing from you.
+
+Best regards,
+[Your Name]
+--- END EXAMPLE ---
+"""
+
+USER_PROMPT_TEMPLATE = """
+Now generate an email for the following:
+
+INTENT: {intent}
+KEY FACTS:
+{facts}
+TONE: {tone}
+"""
+
+--- END PROMPT TEMPLATE ---
+
+================================================================================
+SECTION 4: src/generator.py — FULL IMPLEMENTATION SPEC
+================================================================================
+
+File: src/generator.py
+
+Imports:
+  - anthropic
+  - openai
+  - os, dotenv
+
+Functions to implement:
+
+1. load_clients()
+   - Load ANTHROPIC_API_KEY and OPENAI_API_KEY from .env
+   - Return (anthropic_client, openai_client)
+
+2. build_user_prompt(intent: str, facts: list[str], tone: str) -> str
+   - Format the USER_PROMPT_TEMPLATE
+   - Convert facts list to bullet string: "\n".join(f"- {f}" for f in facts)
+   - Return filled prompt string
+
+3. generate_email_anthropic(intent, facts, tone, model="claude-sonnet-4-20250514") -> str
+   - Call anthropic client.messages.create()
+   - system = SYSTEM_PROMPT + FEW_SHOT_EXAMPLE
+   - user message = build_user_prompt(intent, facts, tone)
+   - max_tokens = 800
+   - Return response text (strip whitespace)
+
+4. generate_email_openai(intent, facts, tone, model="gpt-4o") -> str
+   - Call openai client.chat.completions.create()
+   - messages = [{"role": "system", ...}, {"role": "user", ...}]
+   - Same prompts as above
+   - Return response text
+
+5. generate_email(intent, facts, tone, provider="anthropic") -> str
+   - Router function: calls the right provider based on `provider` arg
+   - Add try/except with error logging
+
+================================================================================
+SECTION 5: src/scenarios.py — 10 TEST SCENARIOS
+================================================================================
+
+Each scenario is a dict:
+{
+  "id": int,
+  "intent": str,
+  "facts": list[str],
+  "tone": str,
+  "human_reference": str   # The ideal email you write by hand
+}
+
+--- ALL 10 SCENARIOS ---
+
+SCENARIO 1
+intent: "Request a meeting with a new client"
+facts: ["First interaction after LinkedIn connection", "Want to discuss digital transformation", "Available Mon-Wed next week", "Meeting duration: 30 minutes"]
+tone: "Professional and confident"
+human_reference: [Write a clean, confident outreach email asking for a 30-min intro call]
+
+SCENARIO 2
+intent: "Follow up on a job application submitted 2 weeks ago"
+facts: ["Applied for Senior Data Analyst role", "Application submitted on June 1st", "Have not heard back", "Attached portfolio link in original application"]
+tone: "Polite and persistent"
+human_reference: [Write a polite follow-up that shows continued interest without sounding desperate]
+
+SCENARIO 3
+intent: "Apologize for missing a deadline"
+facts: ["Report was due on Friday", "Missed due to unexpected server outage", "New delivery date: Tuesday EOD", "Will add executive summary as compensation"]
+tone: "Apologetic and accountable"
+human_reference: [Write an honest apology that takes ownership and gives a clear new commitment]
+
+SCENARIO 4
+intent: "Send a project status update to stakeholders"
+facts: ["Phase 1 complete: data migration done", "Phase 2 on track, 70% complete", "Risk: third-party API delay may push timeline by 3 days", "Next review: July 15th"]
+tone: "Formal and informative"
+human_reference: [Write a structured update email that is clear and covers all facts]
+
+SCENARIO 5
+intent: "Negotiate a contract renewal with a vendor"
+facts: ["Current contract ends August 31st", "Want 15% price reduction", "Competitor quote is 20% lower", "Willing to sign 2-year deal in exchange for discount"]
+tone: "Firm but collaborative"
+human_reference: [Write a negotiation email that is direct about the ask but preserves the relationship]
+
+SCENARIO 6
+intent: "Invite team to a company offsite event"
+facts: ["Date: August 10-11", "Location: Coorg, Karnataka", "Activities: team workshops + hiking", "RSVP required by July 25th", "Travel and stay fully covered"]
+tone: "Enthusiastic and casual"
+human_reference: [Write an exciting, friendly invite that covers all logistics clearly]
+
+SCENARIO 7
+intent: "Reject a candidate after an interview"
+facts: ["Candidate interviewed for Product Manager role", "Strong technical background", "Team felt communication skills were not at the required level", "Encourage reapplying in 6 months"]
+tone: "Empathetic and respectful"
+human_reference: [Write a kind rejection that gives a brief reason and leaves the door open]
+
+SCENARIO 8
+intent: "Request urgent approval for a budget increase"
+facts: ["Original budget: ₹5,00,000", "Revised estimate: ₹6,80,000", "Reason: raw material cost surge of 36%", "Project halt risk if not approved by Friday"]
+tone: "Urgent and factual"
+human_reference: [Write a concise urgent request with clear numbers and a deadline]
+
+SCENARIO 9
+intent: "Thank a mentor after career advice"
+facts: ["Mentor helped navigate a difficult career pivot", "Advice led to accepting a new role at a fintech startup", "Starting date is next Monday", "Plan to stay in touch quarterly"]
+tone: "Warm and genuine"
+human_reference: [Write a heartfelt thank-you that feels personal, not generic]
+
+SCENARIO 10
+intent: "Onboard a new client to a SaaS platform"
+facts: ["Client: Meridian Retail Ltd", "Onboarding call scheduled for July 8th, 3 PM IST", "Login credentials sent separately", "Dedicated support: Priya Sharma, priya@company.com", "Help docs: docs.company.com"]
+tone: "Friendly and professional"
+human_reference: [Write a clear welcome email that covers all onboarding details]
+
+--- NOTE ON HUMAN REFERENCE EMAILS ---
+Write these yourself — they are your "gold standard." Make them ~150-200 words each,
+perfectly matching the tone and including all facts naturally. These are used by
+the evaluation metrics as the benchmark.
+
+================================================================================
+SECTION 6: src/evaluator.py — 3 CUSTOM METRICS
+================================================================================
+
+--- METRIC 1: FACT RECALL SCORE ---
+Definition: What percentage of the required key facts are present in the generated email?
+Logic:
+  - For each fact in the scenario's facts list, check if the core information
+    is semantically present in the generated email.
+  - Use sentence-transformers (all-MiniLM-L6-v2) to compute cosine similarity
+    between each fact and the email text.
+  - A fact is "recalled" if max similarity across all sentences > threshold (0.45).
+  - Score = (facts recalled / total facts) * 100
+Range: 0–100
+
+Code outline:
+  from sentence_transformers import SentenceTransformer, util
+  model = SentenceTransformer('all-MiniLM-L6-v2')
+  
+  def fact_recall_score(generated_email: str, facts: list[str]) -> float:
+      email_sentences = split_into_sentences(generated_email)
+      email_embeddings = model.encode(email_sentences)
+      recalled = 0
+      for fact in facts:
+          fact_embedding = model.encode(fact)
+          similarities = util.cos_sim(fact_embedding, email_embeddings)
+          if float(similarities.max()) > 0.45:
+              recalled += 1
+      return round((recalled / len(facts)) * 100, 2)
+
+--- METRIC 2: TONE ALIGNMENT SCORE ---
+Definition: How well does the generated email's tone match the requested tone?
+Logic:
+  - Use an LLM-as-a-Judge approach.
+  - Send the generated email + the requested tone to Claude/GPT-4o-mini.
+  - Ask it to score tone alignment from 1–10 with a brief reason.
+  - Parse the numeric score from the response.
+  - Normalize to 0–100.
+Range: 0–100
+
+Prompt for judge:
+  "You are a tone analysis expert. Given the requested tone and the email below,
+   rate how well the email achieves the requested tone on a scale of 1 to 10.
+   
+   Requested Tone: {tone}
+   Email: {email}
+   
+   Respond in this exact format:
+   SCORE: [number]
+   REASON: [one sentence]"
+
+Code outline:
+  def tone_alignment_score(generated_email: str, requested_tone: str) -> float:
+      judge_prompt = build_judge_prompt(generated_email, requested_tone)
+      response = call_judge_llm(judge_prompt)  # Use gpt-4o-mini or claude-haiku
+      score = parse_score_from_response(response)  # regex: r'SCORE:\s*(\d+)'
+      return round((score / 10) * 100, 2)
+
+--- METRIC 3: FLUENCY & CONCISENESS SCORE ---
+Definition: Is the email well-written, grammatically clean, and appropriately concise?
+Logic:
+  - Two sub-components averaged together:
+  
+  A) Fluency (50% weight):
+     - Use textstat.flesch_reading_ease(email) to get readability score.
+     - Professional emails should score 50–70 (standard readable).
+     - Normalize: score = min(100, max(0, flesch_score)) for simplicity.
+     - Penalize very low (<30) or very high (>80 = too simple) scores.
+  
+  B) Conciseness (50% weight):
+     - Count word count of generated email vs human reference email.
+     - Ideal range: 0.7x to 1.3x the reference length.
+     - Score = 100 if in range, else decay proportionally.
+     - Formula: conciseness = max(0, 100 - abs(ratio - 1.0) * 150)
+     - where ratio = len(generated.split()) / len(reference.split())
+  
+  Final score = (fluency_score + conciseness_score) / 2
+Range: 0–100
+
+Code outline:
+  import textstat
+  
+  def fluency_conciseness_score(generated_email: str, human_reference: str) -> float:
+      flesch = textstat.flesch_reading_ease(generated_email)
+      fluency = min(100, max(0, flesch + 30))  # shift to penalize very hard text
+      
+      gen_words = len(generated_email.split())
+      ref_words = len(human_reference.split())
+      ratio = gen_words / ref_words if ref_words > 0 else 1.0
+      conciseness = max(0, 100 - abs(ratio - 1.0) * 150)
+      
+      return round((fluency + conciseness) / 2, 2)
+
+--- COMPOSITE SCORE ---
+  def composite_score(fact_recall, tone_alignment, fluency_conciseness) -> float:
+      # Weighted: facts are most critical, then tone, then fluency
+      return round(
+          (fact_recall * 0.40) + (tone_alignment * 0.35) + (fluency_conciseness * 0.25),
+          2
+      )
+
+================================================================================
+SECTION 7: run_evaluation.py — MAIN SCRIPT SPEC
+================================================================================
+
+This script:
+1. Loads all 10 scenarios from scenarios.py
+2. For each scenario, calls generate_email(provider="anthropic")
+3. Runs all 3 metrics on the output
+4. Stores results in a list of dicts
+5. Exports to outputs/model_a_results.json and evaluation_report.csv
+
+Output CSV columns:
+  scenario_id | intent | tone | generated_email | fact_recall | tone_alignment |
+  fluency_conciseness | composite_score
+
+Also prints:
+  - Average score per metric across all 10 scenarios
+  - Overall model average composite score
+
+Pseudocode:
+  results = []
+  for scenario in SCENARIOS:
+      email = generate_email(scenario["intent"], scenario["facts"], scenario["tone"])
+      fr = fact_recall_score(email, scenario["facts"])
+      ta = tone_alignment_score(email, scenario["tone"])
+      fc = fluency_conciseness_score(email, scenario["human_reference"])
+      cs = composite_score(fr, ta, fc)
+      results.append({...all fields...})
+      print(f"Scenario {scenario['id']} — Composite: {cs}")
+  
+  df = pd.DataFrame(results)
+  df.to_csv("outputs/evaluation_report.csv", index=False)
+  
+  print("\n=== AVERAGES ===")
+  print(df[["fact_recall","tone_alignment","fluency_conciseness","composite_score"]].mean())
+
+================================================================================
+SECTION 8: compare_models.py — MODEL COMPARISON SPEC
+================================================================================
+
+This script:
+1. Runs ALL 10 scenarios through Model A (Claude Sonnet 4) 
+2. Runs ALL 10 scenarios through Model B (GPT-4o)
+3. Evaluates both using the identical 3 metrics
+4. Outputs a side-by-side comparison JSON/CSV
+5. Generates comparative_analysis.md
+
+Key comparison functions:
+  run_full_evaluation(provider: str) -> pd.DataFrame
+    - Runs all scenarios and returns a results DataFrame
+
+  compare_models(df_a, df_b) -> dict
+    - Computes per-metric averages for both
+    - Identifies which model wins per metric
+    - Identifies the worst-scoring scenario per model (failure mode)
+    - Returns comparison summary dict
+
+Output: outputs/model_comparison.csv
+Columns: scenario_id | model_a_composite | model_b_composite | winner
+
+================================================================================
+SECTION 9: COMPARATIVE ANALYSIS TEMPLATE (for your report PDF)
+================================================================================
+
+Title: Model Comparison Analysis — Email Generation Assistant
+
+Models Compared:
+  Model A: Claude claude-sonnet-4-20250514 (Anthropic) with Role-Playing + Few-Shot prompt
+  Model B: GPT-4o (OpenAI) with identical prompt
+
+Results Summary: [fill in from your actual run]
+  
+  Metric              | Model A (Claude) | Model B (GPT-4o) | Winner
+  --------------------|-----------------|-----------------|--------
+  Fact Recall         | XX.X%           | XX.X%           | 
+  Tone Alignment      | XX.X%           | XX.X%           | 
+  Fluency/Conciseness | XX.X%           | XX.X%           | 
+  Composite Score     | XX.X%           | XX.X%           | 
+
+Q1: Which model performed better?
+[Fill based on your composite scores. Example: "Model A (Claude) achieved a composite
+score of 87.4 vs Model B's 79.1, outperforming on Fact Recall (+8.2%) and Tone
+Alignment (+6.5%). Model B had a slight edge on Fluency/Conciseness (+1.1%)."]
+
+Q2: Biggest failure mode of the lower-performing model?
+[Fill based on your lowest-scoring scenario. Example: "GPT-4o's biggest failure mode
+was Fact Recall on complex multi-fact scenarios (Scenarios 4, 5, 8). It tended to
+summarize facts rather than embed them, resulting in 2/5 or 3/5 facts recalled in
+those cases. Tone alignment was consistent but facts were frequently dropped."]
+
+Q3: Production recommendation?
+[Fill. Example: "We recommend Model A (Claude claude-sonnet-4-20250514) for production.
+Its Fact Recall score of XX% vs GPT-4o's XX% is critical for this use case — missing
+a key fact in a business email is a significant failure. The 8-point gap in Fact Recall,
+combined with superior Tone Alignment, justifies the recommendation despite comparable
+Fluency scores. Claude also showed more consistent performance across scenario types,
+with lower variance (std dev: X.X vs X.X)."]
+
+================================================================================
+SECTION 10: README.md TEMPLATE
+================================================================================
+
+# Email Generation Assistant — AI Engineer Assessment
+
+## Setup
+
+1. Clone the repository
+   git clone https://github.com/YOUR_USERNAME/email-gen-assistant
+   cd email-gen-assistant
+
+2. Install dependencies
+   pip install -r requirements.txt
+
+3. Set up API keys
+   cp .env.example .env
+   # Add your ANTHROPIC_API_KEY and OPENAI_API_KEY to .env
+
+## Run Evaluation (Model A only)
+   python run_evaluation.py
+
+Output: outputs/evaluation_report.csv
+
+## Run Model Comparison
+   python compare_models.py
+
+Output: outputs/model_comparison.csv, outputs/comparative_analysis.md
+
+## Project Structure
+[paste the structure from Section 2]
+
+## Prompting Strategy
+[1 paragraph summary of Role-Playing + Few-Shot + CoT approach]
+
+## Custom Metrics
+1. Fact Recall Score — semantic similarity based fact checking (0-100)
+2. Tone Alignment Score — LLM-as-a-Judge tone matching (0-100)
+3. Fluency & Conciseness Score — readability + length appropriateness (0-100)
+
+================================================================================
+SECTION 11: requirements.txt
+================================================================================
+
+anthropic>=0.28.0
+openai>=1.30.0
+python-dotenv>=1.0.0
+sentence-transformers>=2.7.0
+textstat>=0.7.3
+pandas>=2.0.0
+torch>=2.0.0
+
+================================================================================
+SECTION 12: .env.example
+================================================================================
+
+ANTHROPIC_API_KEY=your_anthropic_api_key_here
+OPENAI_API_KEY=your_openai_api_key_here
+
+================================================================================
+SECTION 13: EXECUTION ORDER FOR CURSOR
+================================================================================
+
+Tell Cursor to implement files in this exact order:
+
+1. requirements.txt              — dependency list
+2. .env + .env.example           — config
+3. src/utils.py                  — shared helpers first
+4. src/generator.py              — email generation + prompt template
+5. src/scenarios.py              — 10 scenarios + human references
+6. src/evaluator.py              — all 3 metric functions
+7. run_evaluation.py             — main evaluation runner
+8. compare_models.py             — model comparison script
+9. README.md                     — documentation
+
+================================================================================
+SECTION 14: TIPS TO ACE THE ASSESSMENT
+================================================================================
+
+1. WRITE GOOD HUMAN REFERENCES
+   Your 10 human reference emails are your benchmark. Make them genuinely good —
+   correct tone, all facts embedded naturally, professional sign-offs. These
+   directly affect your metric scores.
+
+2. TUNE THE FACT RECALL THRESHOLD
+   Start with cosine similarity threshold 0.45. If you find false positives/negatives
+   in testing, adjust between 0.35–0.55. Print similarity scores during dev.
+
+3. USE A CHEAP MODEL AS JUDGE
+   For Tone Alignment (LLM-as-a-Judge), use claude-haiku or gpt-4o-mini to keep
+   API costs low when running all 10 scenarios × 2 models = 20 judgments.
+
+4. SHOW YOUR WORK IN THE REPORT
+   Interviewers want to see metric definitions, not just scores. Be explicit:
+   "Metric 1 uses semantic similarity with threshold 0.45 because..."
+
+5. VARIANCE MATTERS
+   When recommending a model, mention not just average scores but consistency.
+   A model with avg 85 but low variance beats avg 87 with high variance for prod.
+
+6. MAKE THE CSV CLEAN
+   Your CSV output is a deliverable. Round scores to 2 decimal places,
+   use clear column names, include scenario intent in the CSV for readability.
+
+7. DOCUMENT YOUR PROMPT TEMPLATE FULLY
+   The system prompt, few-shot example, and user template should all appear
+   verbatim in your final report PDF. This is explicitly asked for.
+
+================================================================================
+END OF BLUEPRINT
+================================================================================

@@ -1,0 +1,6 @@
+google-genai
+python-dotenv>=1.0.0
+sentence-transformers>=2.7.0
+textstat>=0.7.3
+pandas>=2.0.0
+torch>=2.0.0
